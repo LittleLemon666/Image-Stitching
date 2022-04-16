@@ -48,6 +48,46 @@ def readFolder(folderPath):
 
 	return images
 
+# for debugging
+def showHarrisDetectorFeatures(image, p, threshold = 2.55, s = 2):
+	for y in range(image.shape[0]):
+		for x in range(image.shape[1]):
+			if (p[y // s, x // s] > threshold): # features
+				# print(f"{y}, {x}")
+				image[y, x, ...] = [0,0,255]
+	image = Image.fromarray(image.astype(np.uint8))
+	image.show()
+
+# fill a color in r half-size rectangle, s is coordinate scale
+def fillAreaValue(source, x, y, s, r, value):
+	minx = max(x * s - r, 0)
+	miny = max(y * s - r, 0)
+	maxx = min(x * s + r, source.shape[0])
+	maxy = min(y * s + r, source.shape[1])
+	source[minx:maxx, miny:maxy] = value
+
+def ANMS(image, p, r, n, threshold = 2.55):
+	features = []
+	while (len(features) < n):
+		r = r - 1
+		p_r = np.copy(p)
+		for f in features:
+			fillAreaValue(p_r, f[0], f[1], 1, r, 0)
+		max_value = threshold + 1
+		while (max_value > threshold):
+			xy = np.unravel_index(np.argmax(p_r, axis=None), p_r.shape)
+			max_value = p_r[xy]
+			features.append([xy[0], xy[1], max_value])
+			fillAreaValue(p_r, xy[0], xy[1], 1, r, 0)
+	return features
+
+# for debugging
+def showFeatures(image, features, s = 2):
+	for feature in features:
+		fillAreaValue(image, feature[0], feature[1], s, 1, [255, 0, 0])
+	image = Image.fromarray(image.astype(np.uint8))
+	image.show()
+
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-d", "--dataPath", type=str,
@@ -59,13 +99,9 @@ if __name__ == "__main__":
 		I = toGrey(images[i])
 		hl = getHarrisDetector(I)
 		p0 = getPlprime(hl)
-		for y in range(images[i].shape[0]):
-			for x in range(images[i].shape[1]):
-				if (p0[int(y / 2), int(x / 2)] > 2.55): # features
-					# print(f"{y}, {x}")
-					images[i][y,x,...] = [0,0,255]
-		image = Image.fromarray(images[i].astype(np.uint8))
-		image.show()
+		# showHarrisDetectorFeatures(images[i], p0)
+		features = ANMS(images[i], p0, 30, 250)
+		showFeatures(images[i], features)
 		p0s.append(p0)
 	
 	
