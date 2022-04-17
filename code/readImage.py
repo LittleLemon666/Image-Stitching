@@ -66,9 +66,9 @@ def fillAreaValue(source, x, y, s, r, value):
 	maxy = min(y * s + r, source.shape[1])
 	source[minx:maxx, miny:maxy] = value
 
-def ANMS(image, p, r, n, threshold = 2.55):
+def ANMS(p, r, n, threshold = 2.55):
 	features = []
-	while (len(features) < n):
+	while (len(features) < n and r > 1):
 		r = r - 1
 		p_r = np.copy(p)
 		for f in features:
@@ -94,14 +94,28 @@ if __name__ == "__main__":
 						help="The directory of images", default="")
 	args = parser.parse_args()
 	images = readFolder(args.dataPath)
-	p0s = []
+	r = 24
+	feature_num = 500
 	for i in range(1,2): #len(images)
 		I = toGrey(images[i])
+		pls = []
+		featuress = []
 		hl = getHarrisDetector(I)
-		p0 = getPlprime(hl)
-		# showHarrisDetectorFeatures(images[i], p0)
-		features = ANMS(images[i], p0, 30, 250)
+		pl = getPlprime(hl)
+		features = ANMS(pl, r, feature_num)
 		showFeatures(images[i], features)
-		p0s.append(p0)
+		pls.append(pl)
+		featuress.append(features)
+		
+		for level in range(1, 4):
+			hl = getHarrisDetector(pls[level - 1])
+			print(hl.shape)
+			pl = getPlprime(hl)
+			print(pl.shape)
+			# showHarrisDetectorFeatures(images[i], p0)
+			features = ANMS(pl, r, feature_num)
+			showFeatures(images[i], features, (level + 1) * 2)
+			pls.append(pl)
+			featuress.append(features)
 	
-	
+		# for i in range(len(features)):
