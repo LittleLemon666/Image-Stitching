@@ -111,7 +111,7 @@ def inverseWarping(source, affine):
 			coord = [int(coord[0, 0]), int(coord[0, 1])]
 			if coord[0] < 0 or coord[1] < 0 or coord[0] >= source.shape[0] or coord[1] >= source.shape[1]:
 				continue
-			output[coord[0], coord[1]] = source[x, y]
+			output[x, y] = source[coord[0], coord[1]]
 	return output
 
 def testAffine(source):
@@ -134,7 +134,7 @@ def descript(source, pls, featuress):
 		# image.show()
 		# for feature in featuress[level]:
 			# affineM = np.dot(getTranslateMatrix(-feature[0], -feature[1]), np.dot(getRotateMatrix(atan2(gx[feature[0]], gy[feature[1]])), getTranslateMatrix(feature[0], feature[1])))
-	testAffine(image)
+	testAffine(source)
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
