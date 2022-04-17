@@ -1,9 +1,10 @@
+from math import sin, cos, atan2
 from PIL import Image
 import numpy as np
 import os
 from os import path
 import argparse
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filter, sobel
 
 from numba import njit
 
@@ -27,9 +28,9 @@ def getHarrisDetector(I, sigma = 1.5):
 def getPlprime(image, s = 2, sigma = 1.0):
 	image = gaussian_filter(image, sigma)
 	output = np.zeros((int(image.shape[0] / s), int(image.shape[1] / s)))
-	for y in range(output.shape[0]):
-		for x in range(output.shape[1]):
-			output[y][x] = image[y * s][x * s]
+	for x in range(output.shape[0]):
+		for y in range(output.shape[1]):
+			output[x][y] = image[x * s][y * s]
 	return output
 
 def readFolder(folderPath):
@@ -50,11 +51,11 @@ def readFolder(folderPath):
 
 # for debugging
 def showHarrisDetectorFeatures(image, p, threshold = 2.55, s = 2):
-	for y in range(image.shape[0]):
-		for x in range(image.shape[1]):
-			if (p[y // s, x // s] > threshold): # features
+	for x in range(image.shape[0]):
+		for y in range(image.shape[1]):
+			if (p[x // s, y // s] > threshold): # features
 				# print(f"{y}, {x}")
-				image[y, x, ...] = [0,0,255]
+				image[x, y, ...] = [0,0,255]
 	image = Image.fromarray(image.astype(np.uint8))
 	image.show()
 
@@ -88,6 +89,53 @@ def showFeatures(image, features, s = 2):
 	image = Image.fromarray(image.astype(np.uint8))
 	image.show()
 
+def getTranslateMatrix(x, y):
+	m = np.matrix([[1, 0, x],
+		 		   [0, 1, y],
+		 		   [0, 0, 1]])
+	return m
+
+def getRotateMatrix(theta):
+	m = np.matrix([[cos(theta), -sin(theta), 0],
+		 		   [sin(theta), cos(theta), 0],
+		 		   [0, 0, 1]])
+	return m
+
+def inverseWarping(source, affine):
+	output = np.zeros(source.shape)
+	affine_inverse = np.linalg.inv(affine)
+	print(affine)
+	for x in range(source.shape[0]):
+		for y in range(source.shape[1]):
+			coord = np.dot(affine_inverse, np.array([x, y, 1]))
+			coord = [int(coord[0, 0]), int(coord[0, 1])]
+			if coord[0] < 0 or coord[1] < 0 or coord[0] >= source.shape[0] or coord[1] >= source.shape[1]:
+				continue
+			output[coord[0], coord[1]] = source[x, y]
+	return output
+
+def testAffine(source):
+	affine = np.dot(getTranslateMatrix(source.shape[0] // 2, source.shape[1] // 2),
+						np.dot(getRotateMatrix(atan2(40,30)),
+							   getTranslateMatrix(-source.shape[0] // 2, -source.shape[1] // 2)))
+	image = inverseWarping(source, affine)
+	image = Image.fromarray(image.astype(np.uint8))
+	image.show()
+
+def descript(source, pls, featuress):
+	for level in range(len(featuress)):
+		gx = sobel(pls[level], 0)
+		gy = sobel(pls[level], 1)
+		affine = np.dot(getTranslateMatrix(featuress[level][0][0], featuress[level][0][1]),
+						np.dot(getRotateMatrix(atan2(gx[featuress[level][0][0], featuress[level][0][1]], gy[featuress[level][0][0], featuress[level][0][1]])),
+							   getTranslateMatrix(-featuress[level][0][0], -featuress[level][0][1])))
+		image = inverseWarping(source, affine)
+		# image = Image.fromarray(image.astype(np.uint8))
+		# image.show()
+		# for feature in featuress[level]:
+			# affineM = np.dot(getTranslateMatrix(-feature[0], -feature[1]), np.dot(getRotateMatrix(atan2(gx[feature[0]], gy[feature[1]])), getTranslateMatrix(feature[0], feature[1])))
+	testAffine(image)
+
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-d", "--dataPath", type=str,
@@ -96,26 +144,26 @@ if __name__ == "__main__":
 	images = readFolder(args.dataPath)
 	r = 24
 	feature_num = 500
-	for i in range(1,2): #len(images)
+	for i in range(1, 2): #len(images)
 		I = toGrey(images[i])
 		pls = []
 		featuress = []
 		hl = getHarrisDetector(I)
 		pl = getPlprime(hl)
 		features = ANMS(pl, r, feature_num)
-		showFeatures(images[i], features)
+		# showFeatures(images[i], features)
 		pls.append(pl)
 		featuress.append(features)
 		
 		for level in range(1, 4):
 			hl = getHarrisDetector(pls[level - 1])
-			print(hl.shape)
 			pl = getPlprime(hl)
-			print(pl.shape)
 			# showHarrisDetectorFeatures(images[i], p0)
 			features = ANMS(pl, r, feature_num)
-			showFeatures(images[i], features, (level + 1) * 2)
+			# showFeatures(images[i], features, (level + 1) * 2)
 			pls.append(pl)
 			featuress.append(features)
-	
-		# for i in range(len(features)):
+
+		descript(images[i], pls, featuress)
+		# image = Image.fromarray(images[i].astype(np.uint8))
+		# image.show()
