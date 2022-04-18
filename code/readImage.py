@@ -5,6 +5,8 @@ import os
 from os import path
 import argparse
 from scipy.ndimage import gaussian_filter, sobel
+from sklearn.neighbors import NearestNeighbors
+import json
 
 from numba import njit
 
@@ -162,11 +164,13 @@ def getArea(source, y, x, s, r):
 
 # descriptor: x y value gx gy normalisation
 def descript(source, Is, pls, featuress):
-	descriptors = []
+	descriptors_level = []
 	for level in range(len(featuress)):
 	# for level in range(1, 2):
+		descriptors = []
 		gy = sobel(pls[level], 0)
 		gx = sobel(pls[level], 1)
+		# c = 0
 		for feature in featuress[level]:
 			center_y = feature[0]
 			center_x = feature[1]
@@ -182,8 +186,47 @@ def descript(source, Is, pls, featuress):
 			descriptor = [center_x, center_y, feature[2], gx[center_y, center_x], gy[center_y, center_x], normalisation]
 			descriptors.append(descriptor)
 			print(f"x y value: {descriptor[0]} {descriptor[1]} {descriptor[2]}")
+			# if c > 1:
+			# 	break
+			# c = c + 1
+		descriptors_level.append(descriptors)
 		markDescriptors(source, descriptors, pow(2, level))
 	# testMarkFeature(source)
+	return descriptors_level
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
+
+def saveDescriptors(image_descriptors):
+	with open("descriptors.json", "w") as f:
+    		json.dump(image_descriptors, f, cls=NpEncoder)
+
+def readDescriptors(path):
+	image_descriptors = []
+	with open(path, "r") as f:
+		image_descriptors = json.loads(f.read())
+	return image_descriptors
+
+def featureMatch(descriptorsA, descriptorsB):
+	pairLevel = []
+	for level in range(len(descriptorsA)):
+		target = NearestNeighbors(n_neighbors=2, algorithm='ball_tree').fit(descriptorsA[level])
+		distances, indices = target.kneighbors(descriptorsB[level])
+		print(distances)
+		print("-------")
+		print(indices)
+		pair = []
+		
+		pairLevel.append(pair)
+
+	return pairLevel
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
@@ -193,7 +236,11 @@ if __name__ == "__main__":
 	images = readFolder(args.dataPath)
 	r = 24
 	feature_num = 250
-	for i in range(1, 2): #len(images)
+	image_descriptors = []
+	# image_descriptors = readDescriptors("./descriptors.json")
+	# print(image_descriptors)
+	
+	for i in range(1, 3): #len(images)
 		I = toGrey(images[i])
 		Is = [I]
 		pls = []
@@ -202,7 +249,6 @@ if __name__ == "__main__":
 		# pl = getPlprime(hl)
 		# features = ANMS(pl, r, feature_num)
 		features = ANMS(p0, r, feature_num)
-		showFeatures(images[i], features, 1)
 		pls.append(p0)
 		featuress.append(features)
 		# print(len(features))
@@ -215,11 +261,20 @@ if __name__ == "__main__":
 			pl = getHarrisDetector(I)
 			# showHarrisDetectorFeatures(images[i], p0)
 			features = ANMS(pl, r, feature_num)
-			showFeatures(images[i], features, pow(2, level))
 			Is.append(I)
 			pls.append(pl)
 			featuress.append(features)
 
 		# testAffine(images[i])
-		descript(images[i], Is, pls, featuress)
-		
+		image_descriptor = descript(images[i], Is, pls, featuress)
+		image_descriptors.append(image_descriptor)
+	
+	saveDescriptors(image_descriptors)
+
+	# for i in range(1, 3): #len(images)
+	# 	for level in range(0, 2):
+	# 		# showFeatures(images[i], features, pow(2, level))
+	# 		markDescriptors(images[i], image_descriptors[i - 1][level], pow(2, level - 0.686))
+	
+	# for i in range(1, 2): #len(images) - 1
+	# 	featureMatch(image_descriptors[i - 1], image_descriptors[i])

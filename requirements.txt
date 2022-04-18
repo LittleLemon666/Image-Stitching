@@ -1,5 +1,5 @@
-matplotlib==3.4.3
 numba==0.55.1
-numpy==1.18.4
-Pillow==9.0.1
-scipy==1.7.1
+numpy==1.21.5
+Pillow==9.1.0
+scikit_learn==1.0.2
+scipy==1.8.0
