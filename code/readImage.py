@@ -136,16 +136,18 @@ def testMarkFeature(source):
 
 # the direction is up if theta = 0.
 # theta is between -PI/2 ~ PI/2
-def markDescriptors(source, descriptors, r = 20):
+def markDescriptors(source, descriptors, s = 1, r = 20):
 	image = Image.fromarray(source)
 	for descriptor in descriptors:
+		descriptor[0] = s * descriptor[0] 
+		descriptor[1] = s * descriptor[1] 
 		affine = getAffine(descriptor[0], descriptor[1], atan2(descriptor[4] , descriptor[3]))
-		p1 = np.dot(affine, np.array([descriptor[0] - r, descriptor[1] - r, 1]))
-		p2 = np.dot(affine, np.array([descriptor[0] + r, descriptor[1] - r, 1]))
-		p3 = np.dot(affine, np.array([descriptor[0] + r, descriptor[1] + r, 1]))
-		p4 = np.dot(affine, np.array([descriptor[0] - r, descriptor[1] + r, 1]))
+		p1 = np.dot(affine, np.array([descriptor[0] - s * r, descriptor[1] - s * r, 1]))
+		p2 = np.dot(affine, np.array([descriptor[0] + s * r, descriptor[1] - s * r, 1]))
+		p3 = np.dot(affine, np.array([descriptor[0] + s * r, descriptor[1] + s * r, 1]))
+		p4 = np.dot(affine, np.array([descriptor[0] - s * r, descriptor[1] + s * r, 1]))
 		polygon = [p1[0,0], p1[0,1], p2[0,0], p2[0,1], p3[0,0], p3[0,1], p4[0,0], p4[0,1]]
-		p0 = np.dot(affine, np.array([descriptor[0], descriptor[1] - r, 1]))
+		p0 = np.dot(affine, np.array([descriptor[0], descriptor[1] - s * r, 1]))
 		ImageDraw.Draw(image).polygon(polygon, outline="red")
 		ImageDraw.Draw(image).line([descriptor[0], descriptor[1], p0[0,0], p0[0,1]], fill="red", width=1)
 	image.show()
@@ -161,17 +163,17 @@ def getArea(source, y, x, s, r):
 # descriptor: x y value gx gy normalisation
 def descript(source, Is, pls, featuress):
 	descriptors = []
-	# for level in range(len(featuress)):
-	for level in range(0, 1):
+	for level in range(len(featuress)):
+	# for level in range(1, 2):
 		gy = sobel(pls[level], 0)
 		gx = sobel(pls[level], 1)
 		for feature in featuress[level]:
 			center_y = feature[0]
 			center_x = feature[1]
 			theta = atan2(gy[center_y, center_x], gx[center_y, center_x])
-			affine = getAffine(center_x, center_y, theta) # notice
+			affine = getAffine(center_x, center_y, theta)
 			image = inverseWarping(Is[level], affine)
-			patch = getArea(image, center_y, center_x, pow(2, level), 20) # notice
+			patch = getArea(image, center_y, center_x, 1, 20)
 			patch = gaussian_filter(patch, 4.5)
 			patch = Image.fromarray(patch.astype(np.uint8))
 			patch.resize((8, 8))
@@ -180,7 +182,7 @@ def descript(source, Is, pls, featuress):
 			descriptor = [center_x, center_y, feature[2], gx[center_y, center_x], gy[center_y, center_x], normalisation]
 			descriptors.append(descriptor)
 			print(f"x y value: {descriptor[0]} {descriptor[1]} {descriptor[2]}")
-		markDescriptors(source, descriptors)
+		markDescriptors(source, descriptors, pow(2, level))
 	# testMarkFeature(source)
 
 if __name__ == "__main__":
@@ -207,13 +209,13 @@ if __name__ == "__main__":
 		# features.sort()
 		# print(features)
 		
-		for level in range(1, 4):
+		for level in range(1, 2):
 			I = getPlprime(Is[level - 1])
 			# print(I.shape)
 			pl = getHarrisDetector(I)
 			# showHarrisDetectorFeatures(images[i], p0)
 			features = ANMS(pl, r, feature_num)
-			# showFeatures(images[i], features, pow(2, level))
+			showFeatures(images[i], features, pow(2, level))
 			Is.append(I)
 			pls.append(pl)
 			featuress.append(features)
