@@ -141,17 +141,17 @@ def testMarkFeature(source):
 def markDescriptors(source, descriptors, s = 1, r = 20):
 	image = Image.fromarray(source)
 	for descriptor in descriptors:
-		descriptor[0] = s * descriptor[0] 
-		descriptor[1] = s * descriptor[1] 
-		affine = getAffine(descriptor[0], descriptor[1], atan2(descriptor[4] , descriptor[3]))
-		p1 = np.dot(affine, np.array([descriptor[0] - s * r, descriptor[1] - s * r, 1]))
-		p2 = np.dot(affine, np.array([descriptor[0] + s * r, descriptor[1] - s * r, 1]))
-		p3 = np.dot(affine, np.array([descriptor[0] + s * r, descriptor[1] + s * r, 1]))
-		p4 = np.dot(affine, np.array([descriptor[0] - s * r, descriptor[1] + s * r, 1]))
+		descriptor_x = s * descriptor[0] 
+		descriptor_y = s * descriptor[1] 
+		affine = getAffine(descriptor_x, descriptor_y, atan2(descriptor[4] , descriptor[3]))
+		p1 = np.dot(affine, np.array([descriptor_x - s * r, descriptor_y - s * r, 1]))
+		p2 = np.dot(affine, np.array([descriptor_x + s * r, descriptor_y - s * r, 1]))
+		p3 = np.dot(affine, np.array([descriptor_x + s * r, descriptor_y + s * r, 1]))
+		p4 = np.dot(affine, np.array([descriptor_x - s * r, descriptor_y + s * r, 1]))
 		polygon = [p1[0,0], p1[0,1], p2[0,0], p2[0,1], p3[0,0], p3[0,1], p4[0,0], p4[0,1]]
-		p0 = np.dot(affine, np.array([descriptor[0], descriptor[1] - s * r, 1]))
+		p0 = np.dot(affine, np.array([descriptor_x, descriptor_y - s * r, 1]))
 		ImageDraw.Draw(image).polygon(polygon, outline="red")
-		ImageDraw.Draw(image).line([descriptor[0], descriptor[1], p0[0,0], p0[0,1]], fill="red", width=1)
+		ImageDraw.Draw(image).line([descriptor_x, descriptor_y, p0[0,0], p0[0,1]], fill="red", width=1)
 	image.show()
 
 @njit
@@ -166,11 +166,9 @@ def getArea(source, y, x, s, r):
 def descript(source, Is, pls, featuress):
 	descriptors_level = []
 	for level in range(len(featuress)):
-	# for level in range(1, 2):
 		descriptors = []
 		gy = sobel(pls[level], 0)
 		gx = sobel(pls[level], 1)
-		# c = 0
 		for feature in featuress[level]:
 			center_y = feature[0]
 			center_x = feature[1]
@@ -186,9 +184,6 @@ def descript(source, Is, pls, featuress):
 			descriptor = [center_x, center_y, feature[2], gx[center_y, center_x], gy[center_y, center_x], normalisation]
 			descriptors.append(descriptor)
 			print(f"x y value: {descriptor[0]} {descriptor[1]} {descriptor[2]}")
-			# if c > 1:
-			# 	break
-			# c = c + 1
 		descriptors_level.append(descriptors)
 		markDescriptors(source, descriptors, pow(2, level))
 	# testMarkFeature(source)
@@ -205,8 +200,8 @@ class NpEncoder(json.JSONEncoder):
         return super(NpEncoder, self).default(obj)
 
 def saveDescriptors(image_descriptors):
-	with open("descriptors.json", "w") as f:
-    		json.dump(image_descriptors, f, cls=NpEncoder)
+	with open("./descriptors.json", "w") as f:
+		json.dump(image_descriptors, f, cls=NpEncoder)
 
 def readDescriptors(path):
 	image_descriptors = []
@@ -232,49 +227,44 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-d", "--dataPath", type=str,
 						help="The directory of images", default="")
+	parser.add_argument("-j", "--descriptorsPath", type=str,
+						help="The path of descriptors", default="")
 	args = parser.parse_args()
 	images = readFolder(args.dataPath)
 	r = 24
 	feature_num = 250
 	image_descriptors = []
-	# image_descriptors = readDescriptors("./descriptors.json")
-	# print(image_descriptors)
+	if args.descriptorsPath:
+		image_descriptors = readDescriptors("./descriptors.json")
+		for i in range(1, 3): #len(images)
+			for level in range(0, 2):
+				markDescriptors(images[i], image_descriptors[i - 1][level], pow(2, level))
 	
-	for i in range(1, 3): #len(images)
-		I = toGrey(images[i])
-		Is = [I]
-		pls = []
-		featuress = []
-		p0 = getHarrisDetector(I)
-		# pl = getPlprime(hl)
-		# features = ANMS(pl, r, feature_num)
-		features = ANMS(p0, r, feature_num)
-		pls.append(p0)
-		featuress.append(features)
-		# print(len(features))
-		# features.sort()
-		# print(features)
-		
-		for level in range(1, 2):
-			I = getPlprime(Is[level - 1])
-			# print(I.shape)
-			pl = getHarrisDetector(I)
-			# showHarrisDetectorFeatures(images[i], p0)
-			features = ANMS(pl, r, feature_num)
-			Is.append(I)
-			pls.append(pl)
+	else:
+		for i in range(1, 3): #len(images)
+			I = toGrey(images[i])
+			Is = [I]
+			pls = []
+			featuress = []
+			p0 = getHarrisDetector(I)
+			features = ANMS(p0, r, feature_num)
+			pls.append(p0)
 			featuress.append(features)
+			
+			for level in range(1, 2):
+				I = getPlprime(Is[level - 1])
+				pl = getHarrisDetector(I)
+				# showHarrisDetectorFeatures(images[i], p0)
+				features = ANMS(pl, r, feature_num)
+				Is.append(I)
+				pls.append(pl)
+				featuress.append(features)
 
-		# testAffine(images[i])
-		image_descriptor = descript(images[i], Is, pls, featuress)
-		image_descriptors.append(image_descriptor)
+			# testAffine(images[i])
+			image_descriptor = descript(images[i], Is, pls, featuress)
+			image_descriptors.append(image_descriptor)
+		
+		saveDescriptors(image_descriptors)
 	
-	saveDescriptors(image_descriptors)
-
-	# for i in range(1, 3): #len(images)
-	# 	for level in range(0, 2):
-	# 		# showFeatures(images[i], features, pow(2, level))
-	# 		markDescriptors(images[i], image_descriptors[i - 1][level], pow(2, level - 0.686))
-	
-	# for i in range(1, 2): #len(images) - 1
-	# 	featureMatch(image_descriptors[i - 1], image_descriptors[i])
+		# for i in range(1, 2): #len(images) - 1
+		# 	featureMatch(image_descriptors[i - 1], image_descriptors[i])
