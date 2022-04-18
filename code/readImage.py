@@ -1,5 +1,6 @@
 from math import sin, cos, atan2
 from PIL import Image, ImageDraw
+from matplotlib.cbook import flatten
 import numpy as np
 import os
 from os import path
@@ -178,7 +179,7 @@ def descript(source, Is, pls, featuress):
 			patch = getArea(image, center_y, center_x, 1, 20)
 			patch = gaussian_filter(patch, 4.5)
 			patch = Image.fromarray(patch.astype(np.uint8))
-			patch.resize((8, 8))
+			patch = patch.resize((8, 8))
 			# patch.show()
 			normalisation = (patch - np.mean(patch)) / np.std(patch)
 			descriptor = [center_x, center_y, feature[2], gx[center_y, center_x], gy[center_y, center_x], normalisation]
@@ -209,11 +210,44 @@ def readDescriptors(path):
 		image_descriptors = json.loads(f.read())
 	return image_descriptors
 
+def flattenDescriptorsLevel(descriptors_level):
+	flattenss_level = []
+	for descriptors in descriptors_level:
+		flattenss = []
+		for descriptor in descriptors:
+			flattens = [float(descriptor[0]), float(descriptor[1]), float(descriptor[2]), float(descriptor[3]), float(descriptor[4])]
+			descriptor[5] = np.array(descriptor[5])
+			for y in range(len(descriptor[5])):
+				for x in range(len(descriptor[5][y])):
+					flattens.append(float(descriptor[5][y][x]))
+			flattenss.append(flattens)
+		flattenss_level.append(flattenss)
+		# flatten = [attribute for descriptor in descriptors for attribute in descriptor]
+			# flattens.append(flatten)
+	flattenss_level = np.array(flattenss_level, dtype=np.float64)
+	return flattenss_level
+
+def flattenDescriptors(descriptors):
+	flattenss = []
+	for descriptor in descriptors:
+		flattens = [float(descriptor[0]), float(descriptor[1]), float(descriptor[2]), float(descriptor[3]), float(descriptor[4])]
+		descriptor[5] = np.array(descriptor[5])
+		for y in range(len(descriptor[5])):
+			for x in range(len(descriptor[5][y])):
+				flattens.append(float(descriptor[5][y][x]))
+		flattenss.append(flattens)
+		# flatten = [attribute for descriptor in descriptors for attribute in descriptor]
+			# flattens.append(flatten)
+	flattenss = np.array(flattenss, dtype=np.float64)
+	return flattenss
+
 def featureMatch(descriptorsA, descriptorsB):
 	pairLevel = []
 	for level in range(len(descriptorsA)):
-		target = NearestNeighbors(n_neighbors=2, algorithm='ball_tree').fit(descriptorsA[level])
-		distances, indices = target.kneighbors(descriptorsB[level])
+		A = flattenDescriptors(descriptorsA[level])
+		B = flattenDescriptors(descriptorsB[level])
+		target = NearestNeighbors(n_neighbors=2, algorithm='ball_tree').fit(A)
+		distances, indices = target.kneighbors(B)
 		print(distances)
 		print("-------")
 		print(indices)
@@ -239,6 +273,14 @@ if __name__ == "__main__":
 		for i in range(1, 3): #len(images)
 			for level in range(0, 2):
 				markDescriptors(images[i], image_descriptors[i - 1][level], pow(2, level))
+
+		# flattenDescriptors(image_descriptors[0])
+		# for descriptors_level in image_descriptors:
+			# descriptors_level = flattenDescriptors(descriptors_level)
+		# print(image_descriptors[0])
+
+		for i in range(1, 2): #len(images) - 1
+			featureMatch(image_descriptors[i - 1], image_descriptors[i])
 	
 	else:
 		for i in range(1, 3): #len(images)
@@ -265,6 +307,3 @@ if __name__ == "__main__":
 			image_descriptors.append(image_descriptor)
 		
 		saveDescriptors(image_descriptors)
-	
-		# for i in range(1, 2): #len(images) - 1
-		# 	featureMatch(image_descriptors[i - 1], image_descriptors[i])
