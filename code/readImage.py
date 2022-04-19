@@ -70,7 +70,7 @@ def fillAreaValue(source, y, x, s, r, value):
 	maxx = min(x * s + r, source.shape[1])
 	source[miny:maxy, minx:maxx] = value
 
-def ANMS(p, r, n, threshold = 2.55):
+def ANMS(p, r, n, threshold = 3):
 	features = []
 	while (len(features) < n and r > 1):
 		r = r - 1
@@ -89,8 +89,18 @@ def ANMS(p, r, n, threshold = 2.55):
 	return features
 
 # for debugging
-def showFeatures(image, features, s = 2):
+def showFeatures(image, features, s = 1):
+	# print(image.shape)
 	image = np.copy(image)
+	if len(image.shape) == 2:
+		output = np.zeros((image.shape[0], image.shape[1], 3))
+		for c in range(3):
+			output[:, :, c] = image[:, :]
+		image = np.copy(output)
+		# target = np.zeros(image.shape[0], image.shape[1], 3)
+		# target[:,:,...] = [image[:,:], image[:,:], image[:,:]]
+		# imagetarget
+		# image = image[:, :, np.newaxis]
 	for feature in features:
 		fillAreaValue(image, feature[0], feature[1], s, 1, [255, 0, 0])
 	image = Image.fromarray(image.astype(np.uint8))
@@ -126,7 +136,7 @@ def inverseWarping(source, affine):
 	return output
 
 def testAffine(source):
-	affine = getAffine(source.shape[1] // 2, source.shape[0] // 2, atan2(40,30))
+	affine = getAffine(source.shape[1] // 2, source.shape[0] // 2, atan2(40,10))
 	image = inverseWarping(source, affine)
 	image = Image.fromarray(image.astype(np.uint8))
 	image.show()
@@ -168,8 +178,8 @@ def descript(source, Is, pls, featuress):
 	descriptors_level = []
 	for level in range(len(featuress)):
 		descriptors = []
-		gy = sobel(pls[level], 0)
-		gx = sobel(pls[level], 1)
+		gx = sobel(pls[level], 0)
+		gy = sobel(pls[level], 1)
 		for feature in featuress[level]:
 			center_y = feature[0]
 			center_x = feature[1]
@@ -177,14 +187,18 @@ def descript(source, Is, pls, featuress):
 			affine = getAffine(center_x, center_y, theta)
 			image = inverseWarping(Is[level], affine)
 			patch = getArea(image, center_y, center_x, 1, 20)
-			patch = gaussian_filter(patch, 4.5)
+			# image = Image.fromarray(patch.astype(np.uint8))
+			# image.show()
+			patch = gaussian_filter(patch, 1) #4.5
 			patch = Image.fromarray(patch.astype(np.uint8))
+			# patch.show()
 			patch = patch.resize((8, 8))
 			# patch.show()
 			normalisation = (patch - np.mean(patch)) / np.std(patch)
 			descriptor = [center_x, center_y, feature[2], gx[center_y, center_x], gy[center_y, center_x], normalisation]
 			descriptors.append(descriptor)
-			print(f"x y value: {descriptor[0]} {descriptor[1]} {descriptor[2]}")
+			print(f"x y theta: {descriptor[0]} {descriptor[1]} {theta}")
+			# break
 		descriptors_level.append(descriptors)
 		markDescriptors(source, descriptors, pow(2, level))
 	# testMarkFeature(source)
@@ -215,47 +229,59 @@ def flattenDescriptorsLevel(descriptors_level):
 	for descriptors in descriptors_level:
 		flattenss = []
 		for descriptor in descriptors:
-			flattens = [float(descriptor[0]), float(descriptor[1]), float(descriptor[2]), float(descriptor[3]), float(descriptor[4])]
+			flattens = []
 			descriptor[5] = np.array(descriptor[5])
 			for y in range(len(descriptor[5])):
 				for x in range(len(descriptor[5][y])):
 					flattens.append(float(descriptor[5][y][x]))
 			flattenss.append(flattens)
 		flattenss_level.append(flattenss)
-		# flatten = [attribute for descriptor in descriptors for attribute in descriptor]
-			# flattens.append(flatten)
 	flattenss_level = np.array(flattenss_level, dtype=np.float64)
 	return flattenss_level
 
 def flattenDescriptors(descriptors):
 	flattenss = []
 	for descriptor in descriptors:
-		flattens = [float(descriptor[0]), float(descriptor[1]), float(descriptor[2]), float(descriptor[3]), float(descriptor[4])]
+		flattens = []
 		descriptor[5] = np.array(descriptor[5])
 		for y in range(len(descriptor[5])):
 			for x in range(len(descriptor[5][y])):
 				flattens.append(float(descriptor[5][y][x]))
 		flattenss.append(flattens)
-		# flatten = [attribute for descriptor in descriptors for attribute in descriptor]
-			# flattens.append(flatten)
 	flattenss = np.array(flattenss, dtype=np.float64)
 	return flattenss
 
 def featureMatch(descriptorsA, descriptorsB):
-	pairLevel = []
+	pairs_level = []
 	for level in range(len(descriptorsA)):
 		A = flattenDescriptors(descriptorsA[level])
 		B = flattenDescriptors(descriptorsB[level])
-		target = NearestNeighbors(n_neighbors=2, algorithm='ball_tree').fit(A)
-		distances, indices = target.kneighbors(B)
-		print(distances)
-		print("-------")
-		print(indices)
-		pair = []
-		
-		pairLevel.append(pair)
+		target = NearestNeighbors(n_neighbors=2, algorithm='ball_tree').fit(B)
+		distances, indices = target.kneighbors(A)
+		# print(distances)
+		# print("-------")
+		# print(indices)
+		pairs = []
+		for i in range(len(indices)):
+			if distances[i][0] < distances[i][1] * 0.6:
+				pairs.append([i, indices[i][0]])
+		pairs_level.append(pairs)
 
-	return pairLevel
+	return pairs_level
+
+def showPair(image_a, image_b, pairs, descriptors_a, descriptors_b, s):
+	pic = np.zeros((max(image_a.shape[0], image_b.shape[0]), image_a.shape[1] + image_b.shape[1], 3))
+	pic[:image_a.shape[0], :image_a.shape[1]] = image_a
+	pic[:image_b.shape[0], image_a.shape[1]:] = image_b
+	image = Image.fromarray(pic.astype(np.uint8))
+	for pair in pairs:
+		print(pair)
+		point_a = descriptors_a[pair[0]]
+		point_b = descriptors_b[pair[1]]
+		ImageDraw.Draw(image).ellipse([point_a[0] * s - 5, point_a[1] * s - 5, point_a[0] * s + 5, point_a[1] * s + 5], fill ="red", outline ="red")
+		ImageDraw.Draw(image).ellipse([image_a.shape[1] + point_b[0] * s - 5, point_b[1] * s - 5, image_a.shape[1] + point_b[0] * s + 5, point_b[1] * s + 5], fill ="red", outline ="red")
+		ImageDraw.Draw(image).line([point_a[0] * s, point_a[1] * s, image_a.shape[1] + point_b[0] * s, point_b[1] * s], fill="blue", width=1)
+	image.show()
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
@@ -268,19 +294,17 @@ if __name__ == "__main__":
 	r = 24
 	feature_num = 250
 	image_descriptors = []
+	level_num = 3
 	if args.descriptorsPath:
 		image_descriptors = readDescriptors("./descriptors.json")
 		for i in range(1, 3): #len(images)
-			for level in range(0, 2):
+			for level in range(0, level_num):
 				markDescriptors(images[i], image_descriptors[i - 1][level], pow(2, level))
 
-		# flattenDescriptors(image_descriptors[0])
-		# for descriptors_level in image_descriptors:
-			# descriptors_level = flattenDescriptors(descriptors_level)
-		# print(image_descriptors[0])
-
 		for i in range(1, 2): #len(images) - 1
-			featureMatch(image_descriptors[i - 1], image_descriptors[i])
+			pairs_level = featureMatch(image_descriptors[i - 1], image_descriptors[i])
+			for level in range(0, level_num):
+				showPair(images[i], images[i + 1], pairs_level[level], image_descriptors[i - 1][level], image_descriptors[i][level], pow(2, level))
 	
 	else:
 		for i in range(1, 3): #len(images)
@@ -292,8 +316,9 @@ if __name__ == "__main__":
 			features = ANMS(p0, r, feature_num)
 			pls.append(p0)
 			featuress.append(features)
+			showFeatures(images[i], features, 1)
 			
-			for level in range(1, 2):
+			for level in range(1, level_num):
 				I = getPlprime(Is[level - 1])
 				pl = getHarrisDetector(I)
 				# showHarrisDetectorFeatures(images[i], p0)
@@ -301,6 +326,8 @@ if __name__ == "__main__":
 				Is.append(I)
 				pls.append(pl)
 				featuress.append(features)
+				showFeatures(images[i], features, pow(2, level))
+				# showFeatures(I, features, 1)
 
 			# testAffine(images[i])
 			image_descriptor = descript(images[i], Is, pls, featuress)
