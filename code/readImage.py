@@ -9,6 +9,7 @@ from scipy.ndimage import gaussian_filter, sobel
 from sklearn.neighbors import NearestNeighbors
 import json
 
+import math
 from numba import njit
 
 @njit
@@ -60,7 +61,7 @@ def showHarrisDetectorFeatures(image, p, threshold = 2.55, s = 2):
 				# print(f"{y}, {x}")
 				image[x, y, ...] = [0,0,255]
 	image = Image.fromarray(image.astype(np.uint8))
-	image.show()
+	#image.show()
 
 # fill a color in r half-size rectangle, s is coordinate scale
 def fillAreaValue(source, y, x, s, r, value):
@@ -104,7 +105,7 @@ def showFeatures(image, features, s = 1):
 	for feature in features:
 		fillAreaValue(image, feature[0], feature[1], s, 1, [255, 0, 0])
 	image = Image.fromarray(image.astype(np.uint8))
-	image.show()
+	#image.show()
 
 def getTranslateMatrix(x, y):
 	m = np.matrix([[1, 0, x],
@@ -135,17 +136,28 @@ def inverseWarping(source, affine):
 			output[y, x] = source[coord[1], coord[0]]
 	return output
 
+def inverseWarping2(canvas, source, affine):
+	affine_inverse = np.linalg.inv(affine)
+	for y in range(canvas.shape[0]):
+		for x in range(canvas.shape[1]):
+			coord = np.matmul(affine_inverse, np.array([x, y, 1]))
+			coord = [int(coord[0]), int(coord[1])]
+			if coord[0] < 0 or coord[1] < 0 or coord[0] >= source.shape[1] or coord[1] >= source.shape[0]:
+				continue
+			canvas[y, x] = source[coord[1], coord[0]]
+	return canvas
+
 def testAffine(source):
 	affine = getAffine(source.shape[1] // 2, source.shape[0] // 2, atan2(40,10))
 	image = inverseWarping(source, affine)
 	image = Image.fromarray(image.astype(np.uint8))
-	image.show()
+	#image.show()
 
 def testMarkFeature(source):
 	image = Image.fromarray(source)
 	polygon = [5, 5, 100, 5, 100, 100, 5, 100]
 	ImageDraw.Draw(image).polygon(polygon, outline="red")
-	image.show()
+	#image.show()
 
 # the direction is up if theta = 0.
 # theta is between -PI/2 ~ PI/2
@@ -163,7 +175,7 @@ def markDescriptors(source, descriptors, s = 1, r = 20):
 		p0 = np.dot(affine, np.array([descriptor_x, descriptor_y - s * r, 1]))
 		ImageDraw.Draw(image).polygon(polygon, outline="red")
 		ImageDraw.Draw(image).line([descriptor_x, descriptor_y, p0[0,0], p0[0,1]], fill="red", width=1)
-	image.show()
+	#image.show()
 
 @njit
 def getArea(source, y, x, s, r):
@@ -251,7 +263,7 @@ def flattenDescriptors(descriptors):
 	flattenss = np.array(flattenss, dtype=np.float64)
 	return flattenss
 
-def featureMatch(descriptorsA, descriptorsB):
+def featureMatch(descriptorsA, descriptorsB, threshold = 0.6):
 	pairs_level = []
 	for level in range(len(descriptorsA)):
 		A = flattenDescriptors(descriptorsA[level])
@@ -263,7 +275,7 @@ def featureMatch(descriptorsA, descriptorsB):
 		# print(indices)
 		pairs = []
 		for i in range(len(indices)):
-			if distances[i][0] < distances[i][1] * 0.6:
+			if distances[i][0] < distances[i][1] * threshold:
 				pairs.append([i, indices[i][0]])
 		pairs_level.append(pairs)
 
@@ -282,6 +294,98 @@ def showPair(image_a, image_b, pairs, descriptors_a, descriptors_b, s):
 		ImageDraw.Draw(image).ellipse([image_a.shape[1] + point_b[0] * s - 5, point_b[1] * s - 5, image_a.shape[1] + point_b[0] * s + 5, point_b[1] * s + 5], fill ="red", outline ="red")
 		ImageDraw.Draw(image).line([point_a[0] * s, point_a[1] * s, image_a.shape[1] + point_b[0] * s, point_b[1] * s], fill="blue", width=1)
 	image.show()
+
+def findTransform(pointsA, pointsB):
+	pointsLen = min(pointsA.shape[0], pointsB.shape[0])
+	A = np.zeros((pointsLen * 2, 6), dtype=np.float)
+	b = np.zeros((pointsLen * 2), dtype=np.float)
+
+	for i in range(pointsLen):
+		A[i * 2][0] = pointsB[i][0]
+		A[i * 2][1] = pointsB[i][1]
+		A[i * 2][2] = 1
+		b[i * 2] = pointsA[i][0]
+
+		A[i * 2 + 1][3] = pointsB[i][0]
+		A[i * 2 + 1][4] = pointsB[i][1]
+		A[i * 2 + 1][5] = 1
+		b[i * 2 + 1] = pointsA[i][1]
+
+	x = np.linalg.lstsq(A,b, rcond=None)
+	# x_B * x1 + y_B * x2 + x3 = x_A
+	# x_B * x4 + y_B * x5 + x6 = y_A
+	return x[0]
+
+def getPointsInDescriptors(descriptorsLevels):
+	points = []
+	for level in range(len(descriptorsLevels)):
+		for descriptor in descriptorsLevels[level]:
+			points.append(np.array(descriptor[:2]) * pow(2, level))
+	return np.array(points)
+
+def ransac(descriptorsA, descriptorsB, pairs, k, m, outlierDistance):
+	pointsA = getPointsInDescriptors(descriptorsLevels=descriptorsA)[pairs[:, 0]]
+	pointsB = getPointsInDescriptors(descriptorsLevels=descriptorsB)[pairs[:, 1]]
+
+	print(pointsA)
+	print(pointsB)
+
+	inlierCounts = []
+	transforms = []
+	for i in range(k):
+		chosenPairs = np.random.choice(pairs.shape[0], m, replace=False)
+		transform = findTransform(pointsA[chosenPairs], pointsB[chosenPairs])
+
+		newPointsB = np.zeros(pointsB.shape)
+		newPointsB[:, 0] = np.matmul(pointsB, transform[:2]) + transform[2]
+		newPointsB[:, 1] = np.matmul(pointsB, transform[3:5]) + transform[5]
+
+		delta = newPointsB - pointsA
+		delta2 = delta * delta
+		distance = np.sum(delta2, axis=1)
+
+		inlierCount = np.count_nonzero(distance < outlierDistance * outlierDistance)
+		inlierCounts.append(inlierCount)
+		transforms.append(transform)
+	print(inlierCounts)
+	index = np.argmax(inlierCounts)
+	if np.max(inlierCounts) == 0:
+		print("Wrong outlierDistance!!!!")
+	return transforms[index]
+
+def alignImages(imageA, imageB, descriptorsA, descriptorsB, pairs, k, m, outlierDistance):
+	corners = np.zeros((8, 2), dtype=np.float)
+	corners[0] = np.array([0, 0])
+	corners[1] = np.array([imageA.shape[1], 0])
+	corners[2] = np.array([0, imageA.shape[0]])
+	corners[3] = np.array([imageA.shape[1], imageA.shape[0]])
+
+	transform = ransac(descriptorsA, descriptorsB, pairs, k, m, outlierDistance)
+	print(transform[:3])
+	print(transform[3:])
+	corners[4] = np.array([0, 0])
+	corners[5] = np.array([imageB.shape[1], 0])
+	corners[6] = np.array([0, imageB.shape[0]])
+	corners[7] = np.array([imageB.shape[1], imageB.shape[0]])
+	temp0 = np.matmul(corners[4:8], transform[:2]) + transform[2]
+	temp1 = np.matmul(corners[4:8], transform[3:5]) + transform[5]
+	corners[4:8, 0] = temp0
+	corners[4:8, 1] = temp1
+
+	minX = math.floor(np.min(corners[:, 0]))
+	maxX = math.ceil(np.max(corners[:, 0]))
+	minY = math.floor(np.min(corners[:, 1]))
+	maxY = math.ceil(np.max(corners[:, 1]))
+
+	newImage = np.zeros((maxY - minY, maxX - minX, 3), dtype=np.float)
+	newImage[-minY:-minY + imageA.shape[0], -minX:-minX + imageA.shape[1]] = imageA
+	mat = np.array([
+		[transform[0], transform[1], transform[2] - minX],
+		[transform[3], transform[4], transform[5] - minY],
+		[0, 0, 1]
+	], np.float)
+	inverseWarping2(newImage, imageB, mat)
+	return newImage
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
@@ -302,10 +406,22 @@ if __name__ == "__main__":
 				markDescriptors(images[i], image_descriptors[i - 1][level], pow(2, level))
 
 		for i in range(1, 2): #len(images) - 1
-			pairs_level = featureMatch(image_descriptors[i - 1], image_descriptors[i])
+			pairs_level = featureMatch(image_descriptors[i - 1], image_descriptors[i], 0.80)
 			for level in range(0, level_num):
 				showPair(images[i], images[i + 1], pairs_level[level], image_descriptors[i - 1][level], image_descriptors[i][level], pow(2, level))
-	
+
+			newPairs = np.zeros((sum([len(pairs) for pairs in pairs_level]), 2), np.int64)
+			offset = 0
+			for _pairs in pairs_level:
+				pairs = np.array(_pairs)
+				if len(pairs) > 0:
+					newPairs[offset:offset+len(pairs)] = pairs + offset
+					offset += len(pairs)
+
+			newImage = alignImages(images[i], images[i+1], image_descriptors[i - 1], image_descriptors[i], newPairs, 100, 10, 30)
+			Image.fromarray(newImage.astype(np.uint8)).save("temp.png")
+
+
 	else:
 		for i in range(1, 3): #len(images)
 			I = toGrey(images[i])
