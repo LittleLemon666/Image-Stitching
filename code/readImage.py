@@ -188,16 +188,16 @@ def getArea(source, y, x, s, r):
 # descriptor: x y value gx gy normalisation
 def descript(source, Is, pls, featuress):
 	descriptors_level = []
-	for level in range(len(featuress)):
+	for level in range(len(featuress) - 1):
 		descriptors = []
-		gx = sobel(pls[level], 0)
-		gy = sobel(pls[level], 1)
-		for feature in featuress[level]:
+		gx = sobel(pls[level + 1], 0)
+		gy = sobel(pls[level + 1], 1)
+		for feature in featuress[level + 1]:
 			center_y = feature[0]
 			center_x = feature[1]
 			theta = atan2(gy[center_y, center_x], gx[center_y, center_x])
 			affine = getAffine(center_x, center_y, theta)
-			image = inverseWarping(Is[level], affine)
+			image = inverseWarping(Is[level + 1], affine)
 			patch = getArea(image, center_y, center_x, 1, 20)
 			# image = Image.fromarray(patch.astype(np.uint8))
 			# image.show()
@@ -212,7 +212,7 @@ def descript(source, Is, pls, featuress):
 			print(f"x y theta: {descriptor[0]} {descriptor[1]} {theta}")
 			# break
 		descriptors_level.append(descriptors)
-		markDescriptors(source, descriptors, pow(2, level))
+		markDescriptors(source, descriptors, pow(2, level + 1))
 	# testMarkFeature(source)
 	return descriptors_level
 
@@ -402,13 +402,13 @@ if __name__ == "__main__":
 	if args.descriptorsPath:
 		image_descriptors = readDescriptors("./descriptors.json")
 		for i in range(1, 3): #len(images)
-			for level in range(0, level_num):
-				markDescriptors(images[i], image_descriptors[i - 1][level], pow(2, level))
+			for level in range(0, level_num - 1):
+				markDescriptors(images[i], image_descriptors[i - 1][level], pow(2, level + 1))
 
 		for i in range(1, 2): #len(images) - 1
-			pairs_level = featureMatch(image_descriptors[i - 1], image_descriptors[i], 0.80)
-			for level in range(0, level_num):
-				showPair(images[i], images[i + 1], pairs_level[level], image_descriptors[i - 1][level], image_descriptors[i][level], pow(2, level))
+			pairs_level = featureMatch(image_descriptors[i - 1], image_descriptors[i], 0.6)
+			for level in range(0, level_num - 1):
+				showPair(images[i], images[i + 1], pairs_level[level], image_descriptors[i - 1][level], image_descriptors[i][level], pow(2, level + 1))
 
 			newPairs = np.zeros((sum([len(pairs) for pairs in pairs_level]), 2), np.int64)
 			offset = 0
