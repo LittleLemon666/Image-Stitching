@@ -61,7 +61,7 @@ def showHarrisDetectorFeatures(image, p, threshold = 2.55, s = 2):
 				# print(f"{y}, {x}")
 				image[x, y, ...] = [0,0,255]
 	image = Image.fromarray(image.astype(np.uint8))
-	#image.show()
+	image.show()
 
 # fill a color in r half-size rectangle, s is coordinate scale
 def fillAreaValue(source, y, x, s, r, value):
@@ -105,7 +105,7 @@ def showFeatures(image, features, s = 1):
 	for feature in features:
 		fillAreaValue(image, feature[0], feature[1], s, 1, [255, 0, 0])
 	image = Image.fromarray(image.astype(np.uint8))
-	#image.show()
+	image.show()
 
 def getTranslateMatrix(x, y):
 	m = np.matrix([[1, 0, x],
@@ -151,13 +151,13 @@ def testAffine(source):
 	affine = getAffine(source.shape[1] // 2, source.shape[0] // 2, atan2(40,10))
 	image = inverseWarping(source, affine)
 	image = Image.fromarray(image.astype(np.uint8))
-	#image.show()
+	image.show()
 
 def testMarkFeature(source):
 	image = Image.fromarray(source)
 	polygon = [5, 5, 100, 5, 100, 100, 5, 100]
 	ImageDraw.Draw(image).polygon(polygon, outline="red")
-	#image.show()
+	image.show()
 
 # the direction is up if theta = 0.
 # theta is between -PI/2 ~ PI/2
@@ -175,7 +175,7 @@ def markDescriptors(source, descriptors, s = 1, r = 20):
 		p0 = np.dot(affine, np.array([descriptor_x, descriptor_y - s * r, 1]))
 		ImageDraw.Draw(image).polygon(polygon, outline="red")
 		ImageDraw.Draw(image).line([descriptor_x, descriptor_y, p0[0,0], p0[0,1]], fill="red", width=1)
-	#image.show()
+	image.show()
 
 @njit
 def getArea(source, y, x, s, r):
@@ -203,9 +203,10 @@ def descript(source, Is, pls, featuress):
 			# image.show()
 			patch = gaussian_filter(patch, 1) #4.5
 			patch = Image.fromarray(patch.astype(np.uint8))
-			# patch.show()
+			#patch.show()
 			patch = patch.resize((8, 8))
-			# patch.show()
+			#patch.show()
+			patch = np.asarray(patch, dtype=np.float).T
 			normalisation = (patch - np.mean(patch)) / np.std(patch)
 			descriptor = [center_x, center_y, feature[2], gx[center_y, center_x], gy[center_y, center_x], normalisation]
 			descriptors.append(descriptor)
