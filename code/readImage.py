@@ -43,7 +43,7 @@ def readFolder(folderPath):
 
 	# read all images and store as numpy.array
 	for filePath in filePaths:
-		if ".jpg" in filePath or ".JPG" in filePath:
+		if ".jpg" in filePath.lower():
 			image = Image.open(
 				path.join(folderPath, filePath))
 			images.append(np.array(image))
@@ -277,7 +277,7 @@ class NpEncoder(json.JSONEncoder):
 		return super(NpEncoder, self).default(obj)
 
 def saveDescriptors(image_descriptors):
-	with open("./descriptors.json", "w") as f:
+	with open(args.dataPath + "/descriptors.json", "w") as f:
 		json.dump(image_descriptors, f, cls=NpEncoder)
 
 def readDescriptors(path):
@@ -613,8 +613,8 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-d", "--dataPath", type=str,
 						help="The directory of images", default="")
-	parser.add_argument("-j", "--descriptorsPath", type=str,
-						help="The path of descriptors", default="")
+	parser.add_argument("-j", "--descriptorsPath", action='store_true',
+						help="The path of descriptors")
 	args = parser.parse_args()
 	images = readFolder(args.dataPath)
 	r = 24
@@ -622,7 +622,7 @@ if __name__ == "__main__":
 	image_descriptors = []
 	level_num = 3
 	if args.descriptorsPath:
-		image_descriptors = readDescriptors("./descriptors.json")
+		image_descriptors = readDescriptors(args.dataPath + "/descriptors.json")
 		# for i in range(1, 3): #len(images)
 		#     for level in range(0, level_num - 1):
 		#         markDescriptors(images[i], image_descriptors[i - 1][level], pow(2, level + 1))
