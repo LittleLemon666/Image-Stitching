@@ -493,6 +493,8 @@ def alignImages(images, descriptors, matches, k, m, outlierDistance, threshold =
 					root = findRoot(matches, i)
 
 					transform = getChainedTransform(matches, transforms, i)
+					transform[0][2] += offset[root][0]
+					transform[1][2] += offset[root][1]
 					print(transform)
 
 					minX, maxX, minY, maxY = getNewCorners(outImages[root].shape, images[i].shape, transform)
@@ -505,8 +507,8 @@ def alignImages(images, descriptors, matches, k, m, outlierDistance, threshold =
 					], np.float)
 					newImage = inverseWarping(newImage, images[i], mat)
 
-					offset[i][0] = -minX
-					offset[i][1] = -minY
+					offset[root][0] += -minX
+					offset[root][1] += -minY
 					outImages[root] = newImage
 					finished[i] = True
 					changed = True
@@ -587,10 +589,10 @@ def getMatch(descriptors, match_threshold = 0.65, threshold = 30):
 	while True:
 		yx = my_unravel_index(np.argmax(match_mat), match_mat.shape)
 		max_value = match_mat[yx[0]][yx[1]]
-		print(max_value)
 		if max_value == 0 or max_value < threshold:
 			break
 		
+		print(max_value)
 		if checkSameRoot(matches, yx[0], yx[1]):
 			pass
 		elif matches[yx[0]] == -1:
