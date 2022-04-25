@@ -59,7 +59,7 @@ def allToCylindricalProjection(folderPath, images, f):
 	for i in range(len(images)):
 		image = toCylindricalProjection(images[i], f)
 		image = Image.fromarray(image.astype(np.uint8))
-		image.save(path.join(folderPath, f"projection/projection{i}.png"))
+		image.save(path.join(folderPath, f"projection/projection{i}.jpg"))
 		outputs.append(image)
 	return outputs
 
@@ -674,17 +674,20 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument("-d", "--dataPath", type=str,
 						help="The directory of images", default="")
-	parser.add_argument("-j", "--descriptorsPath", action='store_true',
+	parser.add_argument("-j", "--descriptors", action='store_true',
 						help="The path of descriptors")
 	args = parser.parse_args()
-	images = readFolder(args.dataPath)
-	images = allToCylindricalProjection(args.dataPath, images, 704.916)
+	if args.descriptors:
+		images = readFolder(path.join(args.dataPath, 'projection'))
+	else:
+		images = readFolder(args.dataPath)
+		images = allToCylindricalProjection(args.dataPath, images, 704.916)
 	r = 24
 	feature_num = 2000
 	image_descriptors = []
 	level_num = 3
 	debug_show = False
-	if args.descriptorsPath:
+	if args.descriptors:
 		image_descriptors = readDescriptors(args.dataPath + "/descriptors.json")
 		# for i in range(1, 3): #len(images)
 		#     for level in range(0, level_num - 1):
