@@ -241,7 +241,15 @@ def _inverseWarping(canvas, canvasEdge, source, affine_inverse, minX, maxX, minY
 							source[quad_base[1],         quad_base[0] + 1]     * (1 - ratio[0])    * ratio[1] +\
 							source[quad_base[1] + 1,     quad_base[0] + 1]     * (1 - ratio[0])     * (1 - ratio[1])
 
-			ratio = source_edge_ratio / (source_edge_ratio + canvasEdge[y, x])
+			if np.all(ori == 0):
+				source_edge_ratio = 0
+			if np.all(sou == 0):
+				canvasEdge[y, x] = 0
+
+			if canvasEdge[y, x] ==0 and source_edge_ratio == 0:
+				ratio = 1
+			else:
+				ratio = source_edge_ratio / (source_edge_ratio + canvasEdge[y, x])
 			canvas[y, x] = ori * (1 - ratio) + sou * ratio
 			canvasEdge[y, x] = max(source_edge_ratio, canvasEdge[y, x])
 
@@ -456,7 +464,7 @@ def ransac(descriptorsA, descriptorsB, pairs, k, outlierDistance):
 	temp[:, :2] = pointsA
 	temp[:, 2:] = pointsB
 
-	m = newPairs.shape[0] // 7+1
+	m = newPairs.shape[0] // 5+1
 
 	inlierCounts = []
 	transforms = []
@@ -636,8 +644,10 @@ def setRoot(matches, a):
 def getMatch(descriptors, match_threshold = 0.65, threshold = 30):
 	l = len(descriptors)
 	match_mat = np.zeros((l, l), dtype=np.uint8)
-	for i in range(l - 1):
-		for j in range(i + 1, l - 1):
+	for i in range(l):
+		for j in range(l):
+			if i==j:
+				continue
 			pairs_level = featureMatch(descriptors[j], descriptors[i], match_threshold)
 			match_mat[i][j] = getPairCount(pairs_level)
 	
@@ -681,7 +691,7 @@ if __name__ == "__main__":
 		images = readFolder(path.join(args.dataPath, 'projection'))
 	else:
 		images = readFolder(args.dataPath)
-		images = allToCylindricalProjection(args.dataPath, images, 704.916)
+		images = allToCylindricalProjection(args.dataPath, images, 2872)
 	r = 24
 	feature_num = 2000
 	image_descriptors = []
@@ -694,7 +704,7 @@ if __name__ == "__main__":
 		#         markDescriptors(images[i], image_descriptors[i - 1][level], pow(2, level + 1))
 
 		feature_match_threshold = 0.65
-		match_threshold = 20
+		match_threshold = 30
 		matches = getMatch(image_descriptors, feature_match_threshold, match_threshold)
 
 		subarasiiImages = alignImages(images, image_descriptors, matches, 1000, match_threshold, feature_match_threshold)
