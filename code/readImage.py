@@ -132,13 +132,13 @@ def showFeatures(image, features, s = 1):
 def getTranslateMatrix(x, y):
 	m = np.array([[1, 0, x],
 					[0, 1, y],
-					[0, 0, 1]], np.float)
+					[0, 0, 1]], np.float32)
 	return m
 
 def getRotateMatrix(theta):
 	m = np.array([[cos(theta), -sin(theta), 0],
 					[sin(theta), cos(theta), 0],
-					[0, 0, 1]], np.float)
+					[0, 0, 1]], np.float32)
 	return m
 
 def getAffine(center_x, center_y, theta):
@@ -157,7 +157,7 @@ def toCylindricalProjection(image, f):
 	s = f
 	width = math.ceil(getCylindricalProjectionXY(image.shape[1] / 2, 0, s, f)[0]) * 2 - 1
 	height = math.ceil(getCylindricalProjectionXY(0, image.shape[0] / 2, s, f)[1]) * 2 - 1
-	output = np.zeros((height, width, 3), np.float)
+	output = np.zeros((height, width, 3), np.float32)
 	yHalf = image.shape[0] / 2
 	xHalf = image.shape[1] / 2
 	for y in range(image.shape[0]):
@@ -172,7 +172,7 @@ def toCylindricalProjection(image, f):
 
 def getArea(source, y, x, theta, r):
 	l = 2 * r + 1
-	area = np.zeros((l, l), np.float)
+	area = np.zeros((l, l), np.float32)
 
 	affine = np.matmul(getTranslateMatrix(r - x, r - y), getAffine(x, y, theta))
 	affine_inverse = np.linalg.inv(affine)
@@ -188,7 +188,7 @@ def mySum(array):
 
 @njit
 def dotMatPos(mat, pos):
-	return np.array([mySum([mat[v][x] * pos[x] if x < len(pos) else mat[v][x] for x in range(len(mat[v]))]) for v in range(len(pos))], np.float)
+	return np.array([mySum([mat[v][x] * pos[x] if x < len(pos) else mat[v][x] for x in range(len(mat[v]))]) for v in range(len(pos))], np.float32)
 
 @njit
 def _getArea(source, affine_inverse, l, area):
@@ -305,7 +305,7 @@ def descript(source, Is, pls, featuress):
 			#patch.show()
 			patch = patch.resize((8, 8))
 			#patch.show()
-			patch = np.asarray(patch, dtype=np.float).T
+			patch = np.asarray(patch, dtype=np.float32).T
 			normalisation = (patch - np.mean(patch)) / np.std(patch)
 			descriptor = [center_x, center_y, feature[2], gx[center_y, center_x], gy[center_y, center_x], normalisation]
 			descriptors.append(descriptor)
@@ -396,8 +396,8 @@ def showPair(image_a, image_b, pairs_level, descriptors_a, descriptors_b):
 
 def findTransform(pointsA, pointsB):
 	pointsLen = min(pointsA.shape[0], pointsB.shape[0])
-	A = np.zeros((pointsLen * 2, 6), dtype=np.float)
-	b = np.zeros((pointsLen * 2), dtype=np.float)
+	A = np.zeros((pointsLen * 2, 6), dtype=np.float32)
+	b = np.zeros((pointsLen * 2), dtype=np.float32)
 
 	for i in range(pointsLen):
 		A[i * 2][0] = pointsB[i][0]
@@ -423,7 +423,7 @@ def getPointsInDescriptors(descriptorsLevels):
 	return np.array(points)
 
 def getNewCorners(shapeA, shapeB, transform):
-	corners = np.zeros((8, 2), dtype=np.float)
+	corners = np.zeros((8, 2), dtype=np.float32)
 	corners[0] = np.array([0, 0])
 	corners[1] = np.array([shapeA[1], 0])
 	corners[2] = np.array([0, shapeA[0]])
@@ -460,7 +460,7 @@ def ransac(descriptorsA, descriptorsB, pairs, k, outlierDistance):
 
 	pointsA = getPointsInDescriptors(descriptorsLevels=descriptorsA)[newPairs[:, 0]]
 	pointsB = getPointsInDescriptors(descriptorsLevels=descriptorsB)[newPairs[:, 1]]
-	temp = np.zeros((len(pointsA), 4), np.float)
+	temp = np.zeros((len(pointsA), 4), np.float32)
 	temp[:, :2] = pointsA
 	temp[:, 2:] = pointsB
 
@@ -487,7 +487,7 @@ def ransac(descriptorsA, descriptorsB, pairs, k, outlierDistance):
 			transform[:3],
 			transform[3:],
 			[0, 0, 1]
-		], np.float)
+		], np.float32)
 		transforms.append(mat)
 	# print(inlierCounts)
 	index = np.argmax(inlierCounts)
@@ -502,7 +502,7 @@ def getChainedTransform(matches, transforms, a):
 			[1, 0, 0],
 			[0, 1, 0],
 			[0, 0 ,1]
-		], dtype=np.float)
+		], dtype=np.float32)
 	else:
 		return np.matmul(getChainedTransform(matches, transforms, matches[a]), transforms[a])
 
@@ -569,7 +569,7 @@ def alignImages(images, descriptors, matches, k, outlierDistance, threshold = 0.
 						[transform[0][0], transform[0][1], transform[0][2] - minX],
 						[transform[1][0], transform[1][1], transform[1][2] - minY],
 						[0, 0, 1]
-					], np.float)
+					], np.float32)
 					newImage, newEdgeImage = inverseWarping(newImage, newEdgeImage, images[i], mat)
 
 					offset[root][0] += -minX
@@ -686,12 +686,14 @@ if __name__ == "__main__":
 						help="The directory of images", default="")
 	parser.add_argument("-j", "--descriptors", action='store_true',
 						help="The path of descriptors")
+	parser.add_argument("-f", "--focalLength", type=float,
+						help="The focal length of images", default=700)
 	args = parser.parse_args()
 	if args.descriptors:
 		images = readFolder(path.join(args.dataPath, 'projection'))
 	else:
 		images = readFolder(args.dataPath)
-		images = allToCylindricalProjection(args.dataPath, images, 2872)
+		images = allToCylindricalProjection(args.dataPath, images, args.focalLength)
 	r = 24
 	feature_num = 2000
 	image_descriptors = []
