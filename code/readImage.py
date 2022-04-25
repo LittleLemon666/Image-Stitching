@@ -145,30 +145,61 @@ def getAffine(center_x, center_y, theta):
 	return np.matmul(getTranslateMatrix(center_x, center_y),
 					np.matmul(getRotateMatrix(theta),
 						   getTranslateMatrix(-center_x, -center_y)))
-
+@njit
 def getCylindricalProjectionXY(x, y, s, f):
 	xPrime = s * np.arctan(x / f)
 	# xPrime = f * np.tan(x / s)
 	yPrime = s * y / (math.sqrt(pow(x, 2) + pow(f, 2)) + 1e-6)
 	# yPrime = y * (math.sqrt(pow(x, 2) + pow(f, 2)) + 1e-6) / s
-	return [xPrime, yPrime]
+	return np.array([xPrime, yPrime])
 
+@njit
+def getCylindricalInverseProjectionXY(x, y, f):
+	newX = np.tan(x / f) * f
+	newY = (y / f) * (math.sqrt(pow(newX, 2) + pow(f, 2)) + 1e-6)
+	return np.array([newX, newY])
+
+@njit
 def toCylindricalProjection(image, f):
 	s = f
-	width = math.ceil(getCylindricalProjectionXY(image.shape[1] / 2, 0, s, f)[0]) * 2 - 1
-	height = math.ceil(getCylindricalProjectionXY(0, image.shape[0] / 2, s, f)[1]) * 2 - 1
+	width = math.ceil(getCylindricalProjectionXY(image.shape[1] / 2, 0, s, f)[0]) * 2 - 3
+	height = math.ceil(getCylindricalProjectionXY(0, image.shape[0], s, f)[1]) - 2
 	output = np.zeros((height, width, 3), np.float32)
-	yHalf = image.shape[0] / 2
-	xHalf = image.shape[1] / 2
-	for y in range(image.shape[0]):
-		for x in range(image.shape[1]):
-			coord = getCylindricalProjectionXY(x - xHalf, y - yHalf, s, f)
-			coord[0] += width / 2
-			coord[1] += height / 2
-			if coord[0] < 0 or coord[0] >= width or coord[1] < 0 or coord[1] >= height:
+	yHalf = height / 2
+	xHalf = width / 2 - 1
+	for y in range(height):
+		for x in range(width):
+			coord = getCylindricalInverseProjectionXY(x - xHalf, y - yHalf, f)
+			coord[0] += (image.shape[1] - 1) / 2
+			coord[1] += (image.shape[0] - 1) / 2
+			quad_base = np.floor(coord).astype(np.int32)
+			ratio = 1 - (coord - quad_base)
+
+			if quad_base[0] < 0 or quad_base[1] < 0 or quad_base[0] >= image.shape[1] - 1 or coord[1] >= image.shape[0] - 1:
 				continue
-			output[int(coord[1]), int(coord[0])] = image[y, x]
+			output[y][x] =  image[quad_base[1],         quad_base[0]]         * ratio[0]         * ratio[1] +\
+							image[quad_base[1] + 1,     quad_base[0]]         * ratio[0]         * (1 - ratio[1]) +\
+							image[quad_base[1],         quad_base[0] + 1]     * (1 - ratio[0])   * ratio[1] +\
+							image[quad_base[1] + 1,     quad_base[0] + 1]     * (1 - ratio[0])   * (1 - ratio[1])
 	return output
+
+# @njit
+# def toCylindricalProjection(image, f):
+# 	s = f
+# 	width = math.ceil(getCylindricalProjectionXY(image.shape[1] / 2, 0, s, f)[0]) * 2 - 1
+# 	height = math.ceil(getCylindricalProjectionXY(0, image.shape[0] / 2, s, f)[1]) * 2 - 1
+# 	output = np.zeros((height, width, 3), np.float32)
+# 	yHalf = image.shape[0] / 2
+# 	xHalf = image.shape[1] / 2
+# 	for y in range(image.shape[0]):
+# 		for x in range(image.shape[1]):
+# 			coord = getCylindricalProjectionXY(x - xHalf, y - yHalf, s, f)
+# 			coord[0] += width / 2
+# 			coord[1] += height / 2
+# 			if coord[0] < 0 or coord[0] >= width or coord[1] < 0 or coord[1] >= height:
+# 				continue
+# 			output[int(coord[1]), int(coord[0])] = image[y, x]
+# 	return output
 
 def getArea(source, y, x, theta, r):
 	l = 2 * r + 1
@@ -234,19 +265,30 @@ def _inverseWarping(canvas, canvasEdge, source, affine_inverse, minX, maxX, minY
 
 			if quad_base[0] < 0 or quad_base[1] < 0 or quad_base[0] >= source.shape[1] - 1 or coord[1] >= source.shape[0] - 1:
 				continue
-			source_edge_ratio = 2 * min((coord[0] + 1) / source.shape[1], (coord[1] + 1) / source.shape[0], (source.shape[1] - coord[0]) / source.shape[1], (source.shape[0] - coord[1]) / source.shape[0])
+			
 			ori = canvas[y, x] 
-			sou = source[quad_base[1],         quad_base[0]]         * ratio[0]             * ratio[1] +\
-							source[quad_base[1] + 1,     quad_base[0]]         * ratio[0]             * (1 - ratio[1]) +\
-							source[quad_base[1],         quad_base[0] + 1]     * (1 - ratio[0])    * ratio[1] +\
-							source[quad_base[1] + 1,     quad_base[0] + 1]     * (1 - ratio[0])     * (1 - ratio[1])
+			
+			a = source[quad_base[1],         quad_base[0]]
+			b = source[quad_base[1] + 1,     quad_base[0]]
+			c = source[quad_base[1],         quad_base[0] + 1]
+			d = source[quad_base[1] + 1,     quad_base[0] + 1]
+			temp = np.logical_or(a == 0, b == 0)
+			temp = np.logical_or(temp, c == 0)
+			temp = np.logical_or(temp, d == 0)
+
+			sou =   a	* ratio[0]			* ratio[1] +\
+					b	* ratio[0]			* (1 - ratio[1]) +\
+					c	* (1 - ratio[0])	* ratio[1] +\
+					d	* (1 - ratio[0])	* (1 - ratio[1])
+
+			source_edge_ratio = 2 * min((coord[0] + 1) / source.shape[1], (coord[1] + 1) / source.shape[0], (source.shape[1] - coord[0]) / source.shape[1], (source.shape[0] - coord[1]) / source.shape[0])
 
 			if np.all(ori == 0):
-				source_edge_ratio = 0
-			if np.all(sou == 0):
 				canvasEdge[y, x] = 0
+			if np.all(temp):
+				source_edge_ratio = 0
 
-			if canvasEdge[y, x] ==0 and source_edge_ratio == 0:
+			if canvasEdge[y, x] == 0 and source_edge_ratio == 0:
 				ratio = 1
 			else:
 				ratio = source_edge_ratio / (source_edge_ratio + canvasEdge[y, x])
@@ -464,7 +506,7 @@ def ransac(descriptorsA, descriptorsB, pairs, k, outlierDistance):
 	temp[:, :2] = pointsA
 	temp[:, 2:] = pointsB
 
-	m = newPairs.shape[0] // 5+1
+	m = newPairs.shape[0] // 3+1
 
 	inlierCounts = []
 	transforms = []
@@ -489,8 +531,8 @@ def ransac(descriptorsA, descriptorsB, pairs, k, outlierDistance):
 			[0, 0, 1]
 		], np.float32)
 		transforms.append(mat)
-	# print(inlierCounts)
 	index = np.argmax(inlierCounts)
+	print(f"{inlierCounts[index]}\t  Confidence: {inlierCounts[index] / newPairs.shape[0] * 100}%")
 	if np.max(inlierCounts) == 0:
 		print("Wrong outlierDistance!!!!")
 	return transforms[index]
@@ -541,7 +583,7 @@ def alignImages(images, descriptors, matches, k, outlierDistance, threshold = 0.
 	edgeImages = [0] * len(images)
 
 	finished = [False] * len(images)
-	offset = [[0, 0]] * len(images)
+	offset = [[0, 0] for i in range(len(images))]
 	changed = True
 	while changed:
 		changed = False
@@ -571,6 +613,8 @@ def alignImages(images, descriptors, matches, k, outlierDistance, threshold = 0.
 						[0, 0, 1]
 					], np.float32)
 					newImage, newEdgeImage = inverseWarping(newImage, newEdgeImage, images[i], mat)
+
+					# Image.fromarray(newImage.astype(np.uint8)).show()
 
 					offset[root][0] += -minX
 					offset[root][1] += -minY
@@ -630,11 +674,11 @@ def setRoot(matches, a):
 	while changed:
 		changed = False
 		for i in range(len(connections)):
-			if connections[i][0] in target:
+			if connections[i][0] in target and connections[i][1] not in target:
 				matches[connections[i][1]] = connections[i][0]
 				target.append(connections[i][1])
 				changed = True
-			elif connections[i][1] in target:
+			elif connections[i][1] in target and connections[i][0] not in target:
 				matches[connections[i][0]] = connections[i][1]
 				target.append(connections[i][0])
 				changed = True
@@ -705,11 +749,11 @@ if __name__ == "__main__":
 		#     for level in range(0, level_num - 1):
 		#         markDescriptors(images[i], image_descriptors[i - 1][level], pow(2, level + 1))
 
-		feature_match_threshold = 0.65
+		feature_match_threshold = 0.6
 		match_threshold = 30
 		matches = getMatch(image_descriptors, feature_match_threshold, match_threshold)
 
-		subarasiiImages = alignImages(images, image_descriptors, matches, 1000, match_threshold, feature_match_threshold)
+		subarasiiImages = alignImages(images, image_descriptors, matches, 3000, 7, feature_match_threshold)
 		for i in range(len(subarasiiImages)):
 			if type(subarasiiImages[i]) is np.ndarray:
 				Image.fromarray(subarasiiImages[i].astype(np.uint8)).save(f"temp{i}.png")
