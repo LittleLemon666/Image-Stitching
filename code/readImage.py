@@ -47,6 +47,7 @@ def readFolder(folderPath):
 			image = Image.open(
 				path.join(folderPath, filePath))
 			images.append(np.array(image))
+			print(path.join(folderPath, filePath))
 
 	images = np.array(images)
 
@@ -58,8 +59,7 @@ def allToCylindricalProjection(folderPath, images, f):
 		os.mkdir(path.join(folderPath, 'projection'))
 	for i in range(len(images)):
 		image = toCylindricalProjection(images[i], f)
-		image = Image.fromarray(image.astype(np.uint8))
-		image.save(path.join(folderPath, f"projection/projection{i}.jpg"))
+		Image.fromarray(image.astype(np.uint8)).save(path.join(folderPath, "projection/projection{:02d}.jpg".format(i)))
 		outputs.append(image)
 	return outputs
 
@@ -694,7 +694,7 @@ if __name__ == "__main__":
 		#         markDescriptors(images[i], image_descriptors[i - 1][level], pow(2, level + 1))
 
 		feature_match_threshold = 0.65
-		match_threshold = 4
+		match_threshold = 20
 		matches = getMatch(image_descriptors, feature_match_threshold, match_threshold)
 
 		subarasiiImages = alignImages(images, image_descriptors, matches, 1000, match_threshold, feature_match_threshold)
