@@ -52,6 +52,17 @@ def readFolder(folderPath):
 
 	return images
 
+def allToCylindricalProjection(folderPath, images, f):
+	outputs = []
+	if not os.path.exists(path.join(folderPath, 'projection')):
+		os.mkdir(path.join(folderPath, 'projection'))
+	for i in range(len(images)):
+		image = toCylindricalProjection(images[i], f)
+		image = Image.fromarray(image.astype(np.uint8))
+		image.save(path.join(folderPath, f"projection/projection{i}.png"))
+		outputs.append(image)
+	return outputs
+
 # for debugging
 def showHarrisDetectorFeatures(image, p, threshold = 2.55, s = 2):
 	for x in range(image.shape[0]):
@@ -107,17 +118,12 @@ def showFeaturess(image, featuress):
 	image.show()
 # for debugging
 def showFeatures(image, features, s = 1):
-	# print(image.shape)
 	image = np.copy(image)
 	if len(image.shape) == 2:
 		output = np.zeros((image.shape[0], image.shape[1], 3))
 		for c in range(3):
 			output[:, :, c] = image[:, :]
 		image = np.copy(output)
-		# target = np.zeros(image.shape[0], image.shape[1], 3)
-		# target[:,:,...] = [image[:,:], image[:,:], image[:,:]]
-		# imagetarget
-		# image = image[:, :, np.newaxis]
 	for feature in features:
 		fillAreaValue(image, feature[0], feature[1], s, 1, [255, 0, 0])
 	image = Image.fromarray(image.astype(np.uint8))
@@ -139,6 +145,30 @@ def getAffine(center_x, center_y, theta):
 	return np.matmul(getTranslateMatrix(center_x, center_y),
 					np.matmul(getRotateMatrix(theta),
 						   getTranslateMatrix(-center_x, -center_y)))
+
+def getCylindricalProjectionXY(x, y, s, f):
+	xPrime = s * np.arctan(x / f)
+	# xPrime = f * np.tan(x / s)
+	yPrime = s * y / (math.sqrt(pow(x, 2) + pow(f, 2)) + 1e-6)
+	# yPrime = y * (math.sqrt(pow(x, 2) + pow(f, 2)) + 1e-6) / s
+	return [xPrime, yPrime]
+
+def toCylindricalProjection(image, f):
+	s = f
+	width = math.ceil(getCylindricalProjectionXY(image.shape[1] / 2, 0, s, f)[0]) * 2 - 1
+	height = math.ceil(getCylindricalProjectionXY(0, image.shape[0] / 2, s, f)[1]) * 2 - 1
+	output = np.zeros((height, width, 3), np.float)
+	yHalf = image.shape[0] / 2
+	xHalf = image.shape[1] / 2
+	for y in range(image.shape[0]):
+		for x in range(image.shape[1]):
+			coord = getCylindricalProjectionXY(x - xHalf, y - yHalf, s, f)
+			coord[0] += width / 2
+			coord[1] += height / 2
+			if coord[0] < 0 or coord[0] >= width or coord[1] < 0 or coord[1] >= height:
+				continue
+			output[int(coord[1]), int(coord[0])] = image[y, x]
+	return output
 
 def getArea(source, y, x, theta, r):
 	l = 2 * r + 1
@@ -332,9 +362,6 @@ def featureMatch(descriptorsA, descriptorsB, threshold = 0.6):
 		B = flattenDescriptors(descriptorsB[level])
 		target = NearestNeighbors(n_neighbors=2, algorithm='ball_tree').fit(B)
 		distances, indices = target.kneighbors(A)
-		# print(distances)
-		# print("-------")
-		# print(indices)
 		pairs = []
 		for i in range(len(indices)):
 			if distances[i][0] < distances[i][1] * threshold:
@@ -651,6 +678,7 @@ if __name__ == "__main__":
 						help="The path of descriptors")
 	args = parser.parse_args()
 	images = readFolder(args.dataPath)
+	images = allToCylindricalProjection(args.dataPath, images, 704.916)
 	r = 24
 	feature_num = 2000
 	image_descriptors = []
