@@ -98,6 +98,13 @@ def ANMS(p, r, n, threshold = 3):
 			fillAreaValue(p_r, yx[0], yx[1], 1, r, 0)
 	return features
 
+def showFeaturess(image, featuress):
+	image = np.copy(image)
+	for level in range(len(featuress)):
+		for feature in featuress[level]:
+			fillAreaValue(image, feature[0] * pow(2, level), feature[1] * pow(2, level), 1, 1, np.array([255, 0, 0]))
+	image = Image.fromarray(image.astype(np.uint8))
+	image.show()
 # for debugging
 def showFeatures(image, features, s = 1):
 	# print(image.shape)
@@ -172,7 +179,7 @@ def _getArea(source, affine_inverse, l, area):
 
 	return area, out
 
-def inverseWarping(canvas, source, affine):
+def inverseWarping(canvas, canvasEdge, source, affine):
 	affine_inverse = np.linalg.inv(affine)
 	boundary = np.array([
 		[0, 0, 1], 
@@ -185,11 +192,10 @@ def inverseWarping(canvas, source, affine):
 	minY = math.floor(np.min(newBoundary[1]))
 	maxY = math.ceil(np.max(newBoundary[1]))
 	# print(minX, maxX, minY, maxY)
-	_inverseWarping(canvas, source, affine_inverse, minX, maxX, minY, maxY)
-	return canvas
-
+	_inverseWarping(canvas, canvasEdge, source, affine_inverse, minX, maxX, minY, maxY)
+	return canvas, canvasEdge
 @njit
-def _inverseWarping(canvas, source, affine_inverse, minX, maxX, minY, maxY):
+def _inverseWarping(canvas, canvasEdge, source, affine_inverse, minX, maxX, minY, maxY):
 	for y in range(minY, maxY):
 		for x in range(minX, maxX):
 			coord = dotMatPos(affine_inverse, np.array([x, y]))
@@ -198,10 +204,16 @@ def _inverseWarping(canvas, source, affine_inverse, minX, maxX, minY, maxY):
 
 			if quad_base[0] < 0 or quad_base[1] < 0 or quad_base[0] >= source.shape[1] - 1 or coord[1] >= source.shape[0] - 1:
 				continue
-			canvas[y, x] = source[quad_base[1],         quad_base[0]]         * ratio[0]             * ratio[1] +\
+			source_edge_ratio = 2 * min((coord[0] + 1) / source.shape[1], (coord[1] + 1) / source.shape[0], (source.shape[1] - coord[0]) / source.shape[1], (source.shape[0] - coord[1]) / source.shape[0])
+			ori = canvas[y, x] 
+			sou = source[quad_base[1],         quad_base[0]]         * ratio[0]             * ratio[1] +\
 							source[quad_base[1] + 1,     quad_base[0]]         * ratio[0]             * (1 - ratio[1]) +\
 							source[quad_base[1],         quad_base[0] + 1]     * (1 - ratio[0])    * ratio[1] +\
 							source[quad_base[1] + 1,     quad_base[0] + 1]     * (1 - ratio[0])     * (1 - ratio[1])
+
+			ratio = source_edge_ratio / (source_edge_ratio + canvasEdge[y, x])
+			canvas[y, x] = ori * (1 - ratio) + sou * ratio
+			canvasEdge[y, x] = max(source_edge_ratio, canvasEdge[y, x])
 
 def testAffine(source):
 	affine = getAffine(source.shape[1] // 2, source.shape[0] // 2, atan2(40,10))
@@ -271,7 +283,7 @@ class NpEncoder(json.JSONEncoder):
 		if isinstance(obj, np.integer):
 			return int(obj)
 		if isinstance(obj, np.floating):
-			return float(obj)
+			return round(float(obj), 3)
 		if isinstance(obj, np.ndarray):
 			return obj.tolist()
 		return super(NpEncoder, self).default(obj)
@@ -398,23 +410,26 @@ def getNewCorners(shapeA, shapeB, transform):
 	maxY = math.ceil(np.max(corners[:, 1]))
 	return minX, maxX, minY, maxY
 
-def ransac(descriptorsA, descriptorsB, pairs, k, m, outlierDistance):
+def ransac(descriptorsA, descriptorsB, pairs, k, outlierDistance):
 	newPairs = np.zeros((sum([len(pairs) for pairs in pairs]), 2), np.int64)
 	offset = 0
 	for level in range(len(pairs)):
-		_pairs = pairs[level]
-		_pairs = np.array(_pairs)
-		_pairs[:, 0] += sum([len(descriptorsA[a]) for a in range(0, level)])
-		_pairs[:, 1] += sum([len(descriptorsB[a]) for a in range(0, level)])
-		if len(_pairs) > 0:
-			newPairs[offset:offset+len(_pairs)] = _pairs
-			offset += len(_pairs)
+		if len(pairs[level]) > 0:
+			_pairs = pairs[level]
+			_pairs = np.array(_pairs)
+			_pairs[:, 0] += sum([len(descriptorsA[a]) for a in range(level)])
+			_pairs[:, 1] += sum([len(descriptorsB[a]) for a in range(level)])
+			if len(_pairs) > 0:
+				newPairs[offset:offset+len(_pairs)] = _pairs
+				offset += len(_pairs)
 
 	pointsA = getPointsInDescriptors(descriptorsLevels=descriptorsA)[newPairs[:, 0]]
 	pointsB = getPointsInDescriptors(descriptorsLevels=descriptorsB)[newPairs[:, 1]]
 	temp = np.zeros((len(pointsA), 4), np.float)
 	temp[:, :2] = pointsA
 	temp[:, 2:] = pointsB
+
+	m = newPairs.shape[0] // 7+1
 
 	inlierCounts = []
 	transforms = []
@@ -456,7 +471,18 @@ def getChainedTransform(matches, transforms, a):
 	else:
 		return np.matmul(getChainedTransform(matches, transforms, matches[a]), transforms[a])
 
-def alignImages(images, descriptors, matches, k, m, outlierDistance, threshold = 0.65):
+def getEdgeImage(shape):
+	edgeImage = np.zeros(shape, np.float32)
+	_getEdgeImage(edgeImage)
+	return edgeImage
+
+def _getEdgeImage(edgeImage):
+	for y in range(edgeImage.shape[0]):
+		for x in range(edgeImage.shape[1]):
+			edgeImage[y][x] = 2 * min((x + 1) / edgeImage.shape[1], (y + 1) / edgeImage.shape[0], (edgeImage.shape[1] - x) / edgeImage.shape[1], (edgeImage.shape[0] - y) / edgeImage.shape[0])
+	return edgeImage
+
+def alignImages(images, descriptors, matches, k, outlierDistance, threshold = 0.65):
 
 	transforms = []
 
@@ -471,12 +497,13 @@ def alignImages(images, descriptors, matches, k, m, outlierDistance, threshold =
 
 		# showPair(images[matches[i]], images[i], pairs, descriptorsA, descriptorsB)
 
-		transform = ransac(descriptorsA, descriptorsB, pairs, k, m, outlierDistance)
+		transform = ransac(descriptorsA, descriptorsB, pairs, k, outlierDistance)
 		transforms.append(transform)
 
 	print(matches)
 
 	outImages = [0] * len(images)
+	edgeImages = [0] * len(images)
 
 	finished = [False] * len(images)
 	offset = [[0, 0]] * len(images)
@@ -487,6 +514,7 @@ def alignImages(images, descriptors, matches, k, m, outlierDistance, threshold =
 			if not finished[i]:
 				if matches[i] == -1:
 					outImages[i] = images[i]
+					edgeImages[i] = getEdgeImage(images[i].shape[:2])
 					finished[i] = True
 					changed = True
 				elif finished[matches[i]]:
@@ -500,16 +528,19 @@ def alignImages(images, descriptors, matches, k, m, outlierDistance, threshold =
 					minX, maxX, minY, maxY = getNewCorners(outImages[root].shape, images[i].shape, transform)
 					newImage = np.zeros((maxY - minY, maxX - minX, 3), dtype=np.float32)
 					newImage[-minY:-minY + outImages[root].shape[0], -minX:-minX + outImages[root].shape[1]] = outImages[root]
+					newEdgeImage = np.zeros((maxY - minY, maxX - minX), dtype=np.float32)
+					newEdgeImage[-minY:-minY + outImages[root].shape[0], -minX:-minX + outImages[root].shape[1]] = edgeImages[root]
 					mat = np.array([
 						[transform[0][0], transform[0][1], transform[0][2] - minX],
 						[transform[1][0], transform[1][1], transform[1][2] - minY],
 						[0, 0, 1]
 					], np.float)
-					newImage = inverseWarping(newImage, images[i], mat)
+					newImage, newEdgeImage = inverseWarping(newImage, newEdgeImage, images[i], mat)
 
 					offset[root][0] += -minX
 					offset[root][1] += -minY
 					outImages[root] = newImage
+					edgeImages[root] = newEdgeImage
 					finished[i] = True
 					changed = True
 
@@ -548,7 +579,7 @@ def getTree(matches, a):
 		if inTree[i]:
 			out.append(i)
 
-	return out
+	return np.array(out, np.int16)
 
 def setRoot(matches, a):
 	originalRoot = findRoot(matches, a)
@@ -557,7 +588,7 @@ def setRoot(matches, a):
 	targets = getTree(matches, originalRoot)
 	connections = []
 	for i in range(len(targets)):
-		connections.append([targets, matches[targets]])
+		connections.append([targets[i], matches[targets[i]]])
 	
 	target = [a]
 	changed = True
@@ -584,6 +615,7 @@ def getMatch(descriptors, match_threshold = 0.65, threshold = 30):
 			match_mat[i][j] = getPairCount(pairs_level)
 	
 	matches = [-1] * l
+	matches = np.array(matches, np.int16)
 	max_value = 0
 
 	while True:
@@ -592,7 +624,7 @@ def getMatch(descriptors, match_threshold = 0.65, threshold = 30):
 		if max_value == 0 or max_value < threshold:
 			break
 		
-		print(max_value)
+		print(yx[0], yx[1], max_value)
 		if checkSameRoot(matches, yx[0], yx[1]):
 			pass
 		elif matches[yx[0]] == -1:
@@ -620,9 +652,10 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 	images = readFolder(args.dataPath)
 	r = 24
-	feature_num = 1000
+	feature_num = 2000
 	image_descriptors = []
 	level_num = 3
+	debug_show = False
 	if args.descriptorsPath:
 		image_descriptors = readDescriptors(args.dataPath + "/descriptors.json")
 		# for i in range(1, 3): #len(images)
@@ -630,14 +663,16 @@ if __name__ == "__main__":
 		#         markDescriptors(images[i], image_descriptors[i - 1][level], pow(2, level + 1))
 
 		feature_match_threshold = 0.65
-		match_threshold = 20
+		match_threshold = 4
 		matches = getMatch(image_descriptors, feature_match_threshold, match_threshold)
 
-		subarasiiImages = alignImages(images, image_descriptors, matches, 1000, match_threshold, 7, feature_match_threshold)
+		subarasiiImages = alignImages(images, image_descriptors, matches, 1000, match_threshold, feature_match_threshold)
 		for i in range(len(subarasiiImages)):
 			if type(subarasiiImages[i]) is np.ndarray:
 				Image.fromarray(subarasiiImages[i].astype(np.uint8)).save(f"temp{i}.png")
-
+				print("save", i)
+			else:
+				print("dummy")
 
 	else:
 		for i in range(len(images)):
@@ -661,7 +696,8 @@ if __name__ == "__main__":
 				featuress.append(features)
 				# showFeatures(images[i], features, pow(2, level))
 				# showFeatures(I, features, 1)
-
+			if debug_show:
+				showFeaturess(images[i], featuress)
 			# testAffine(images[i])
 			image_descriptor = descript(images[i], Is, pls, featuress)
 			image_descriptors.append(image_descriptor)
